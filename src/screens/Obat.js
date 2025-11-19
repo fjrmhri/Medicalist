@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View,
   FlatList,
@@ -16,63 +16,137 @@ export default function ({ navigation }) {
   const { isDarkmode } = useTheme();
   const [obatList, setObatList] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
   const [favoritList, setFavoritList] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const obatRef = ref(db, "/obat");
-    onValue(obatRef, (snapshot) => {
-      const data = snapshot.val();
-      const obatArray = data ? Object.values(data) : [];
-      setObatList(obatArray);
-    });
-
     const favoritRef = ref(db, "/favorit");
-    onValue(favoritRef, (snapshot) => {
-      const data = snapshot.val();
-      const favoritArray = data ? Object.values(data) : [];
+
+    const unsubscribeObat = onValue(
+      obatRef,
+      (snapshot) => {
+        const obatArray = [];
+        snapshot.forEach((child) => {
+          obatArray.push({ id: child.key, ...child.val() });
+        });
+        setObatList(obatArray);
+        setIsLoading(false);
+      },
+      () => setIsLoading(false)
+    );
+
+    const unsubscribeFavorit = onValue(favoritRef, (snapshot) => {
+      const favoritArray = [];
+      snapshot.forEach((child) => {
+        favoritArray.push({ id: child.key, ...child.val() });
+      });
       setFavoritList(favoritArray);
     });
+
+    return () => {
+      unsubscribeObat();
+      unsubscribeFavorit();
+    };
   }, []);
 
-  const handleSearch = (queryText) => {
+  const handleSearch = useCallback((queryText) => {
     setSearchQuery(queryText);
+  }, []);
 
-    if (queryText.trim().length > 0) {
-      const filteredResults = obatList.filter((obat) =>
-        obat.nama.toLowerCase().includes(queryText.toLowerCase())
-      );
-      setSearchResults(filteredResults);
-    } else {
-      setSearchResults([]);
+  const filteredObat = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return obatList;
     }
-  };
 
-  const isFavorited = (obatId) => {
-    return favoritList.some((favorit) => favorit.id === obatId);
-  };
+    return obatList.filter((obat) =>
+      obat.nama.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [obatList, searchQuery]);
 
-  const toggleFavorite = (obat) => {
-    const isFavoritedAlready = isFavorited(obat.id);
+  const isFavorited = useCallback(
+    (obatId) => favoritList.some((favorit) => favorit.id === obatId),
+    [favoritList]
+  );
 
-    if (isFavoritedAlready) {
+  const toggleFavorite = useCallback(
+    (obat) => {
+      if (!obat?.id) return;
       const favoritRef = ref(db, "/favorit/" + obat.id);
-      remove(favoritRef)
-        .then(() => {})
-        .catch((error) => {
-          alert("Gagal menghapus favorit: " + error.message);
-        });
-    } else {
-      const favoritRef = ref(db, "/favorit/" + obat.id);
-      set(favoritRef, {
-        ...obat,
-      })
-        .then(() => {})
-        .catch((error) => {
-          alert("Gagal menambahkan favorit: " + error.message);
-        });
-    }
-  };
+
+      if (isFavorited(obat.id)) {
+        remove(favoritRef).catch((error) =>
+          alert("Gagal menghapus favorit: " + error.message)
+        );
+      } else {
+        set(favoritRef, { ...obat }).catch((error) =>
+          alert("Gagal menambahkan favorit: " + error.message)
+        );
+      }
+    },
+    [isFavorited]
+  );
+
+  const formatCurrency = useCallback((value) => {
+    if (!value) return "-";
+    return new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+      maximumFractionDigits: 0,
+    }).format(Number(value));
+  }, []);
+
+  const renderObatCard = useCallback(
+    ({ item }) => (
+      <TouchableOpacity
+        style={[
+          styles.card,
+          { backgroundColor: isDarkmode ? "#111827" : "#F3F4F6" },
+        ]}
+        onPress={() => navigation.navigate("DetailObat", { obat: item })}
+      >
+        <View style={styles.cardHeader}>
+          <Text
+            style={[
+              styles.cardTitle,
+              { color: isDarkmode ? "#fff" : "#111827" },
+            ]}
+          >
+            {item.nama}
+          </Text>
+          <TouchableOpacity
+            style={styles.favoriteButton}
+            onPress={() => toggleFavorite(item)}
+          >
+            <Ionicons
+              name={isFavorited(item.id) ? "heart" : "heart-outline"}
+              size={20}
+              color={isFavorited(item.id) ? "#ef4444" : "#9CA3AF"}
+            />
+          </TouchableOpacity>
+        </View>
+        <Text
+          style={[
+            styles.cardText,
+            { color: isDarkmode ? "#d1d5db" : "#4b5563" },
+          ]}
+          numberOfLines={3}
+        >
+          {item.deskripsi}
+        </Text>
+        <Text style={styles.priceLabel}>Harga</Text>
+        <Text
+          style={[
+            styles.priceValue,
+            { color: isDarkmode ? "#93c5fd" : "#2563eb" },
+          ]}
+        >
+          {formatCurrency(item.harga)}
+        </Text>
+      </TouchableOpacity>
+    ),
+    [formatCurrency, isDarkmode, isFavorited, navigation, toggleFavorite]
+  );
 
   return (
     <Layout>
@@ -89,179 +163,116 @@ export default function ({ navigation }) {
       />
 
       <View style={styles.searchWrapper}>
+        <Ionicons
+          name="search"
+          size={18}
+          color={isDarkmode ? "#9CA3AF" : "#6B7280"}
+          style={styles.searchIcon}
+        />
         <TextInput
-          placeholder="Cari Obat..."
+          placeholder="Cari nama obat, kegunaan, atau kandungan"
+          placeholderTextColor={isDarkmode ? "#9CA3AF" : "#9CA3AF"}
           style={[
             styles.searchInput,
             {
-              backgroundColor: isDarkmode ? "#333" : "#E5E7EB",
-              color: isDarkmode ? "#fff" : "#4B5563",
+              backgroundColor: isDarkmode ? "#1F2937" : "#E5E7EB",
+              color: isDarkmode ? "#fff" : "#111827",
             },
           ]}
           value={searchQuery}
           onChangeText={handleSearch}
         />
-        <Text
-          style={[
-            styles.searchIcon,
-            { color: isDarkmode ? "#bbb" : "#9CA3AF" },
-          ]}
-        >
-          🔍
-        </Text>
       </View>
 
-      {searchResults.length > 0 ? (
-        <FlatList
-          data={searchResults}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[
-                styles.card,
-                { backgroundColor: isDarkmode ? "#444" : "#f0f0f0" },
-              ]}
-              onPress={() => navigation.navigate("DetailObat", { obat: item })}
-            >
-              <Text
-                style={[
-                  styles.cardTitle,
-                  { color: isDarkmode ? "#fff" : "#333" },
-                ]}
-              >
-                {item.nama}
-              </Text>
-              <Text
-                style={[
-                  styles.cardText,
-                  { color: isDarkmode ? "#ddd" : "#555" },
-                ]}
-              >
-                {item.deskripsi}
-              </Text>
-              <Text
-                style={[
-                  styles.cardText,
-                  { color: isDarkmode ? "#ddd" : "#555" },
-                ]}
-              >{`Harga: ${item.harga}`}</Text>
-            </TouchableOpacity>
-          )}
-          keyExtractor={(item, index) => index.toString()}
-        />
-      ) : (
-        searchQuery.length > 0 && (
-          <Text
-            style={[
-              styles.noResultsText,
-              { color: isDarkmode ? "#ccc" : "#999" },
-            ]}
-          >
-            Tidak ada hasil ditemukan.
+      <FlatList
+        data={filteredObat}
+        keyExtractor={(item, index) => item.id ?? index.toString()}
+        renderItem={renderObatCard}
+        contentContainerStyle={styles.listContainer}
+        ListEmptyComponent={() => (
+          <Text style={styles.noResultsText}>
+            {isLoading
+              ? "Memuat daftar obat..."
+              : "Tidak ada obat yang sesuai dengan pencarian."}
           </Text>
-        )
-      )}
-
-      {searchQuery.length === 0 && (
-        <FlatList
-          data={obatList}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[
-                styles.card,
-                { backgroundColor: isDarkmode ? "#1e1e1e" : "#f0f0f0" },
-              ]}
-              onPress={() => navigation.navigate("DetailObat", { obat: item })}
-            >
-              <Text
-                style={[
-                  styles.cardTitle,
-                  { color: isDarkmode ? "#fff" : "#333" },
-                ]}
-              >
-                {item.nama}
-              </Text>
-              <Text
-                style={[
-                  styles.cardText,
-                  { color: isDarkmode ? "#ddd" : "#555" },
-                ]}
-              >
-                {item.deskripsi}
-              </Text>
-              <Text
-                style={[
-                  styles.cardText,
-                  { color: isDarkmode ? "#ddd" : "#555" },
-                ]}
-              >{`Harga: ${item.harga}`}</Text>
-              <TouchableOpacity
-                style={[
-                  styles.favoriteIcon,
-                  { position: "absolute", top: 10, right: 16 },
-                ]}
-                onPress={() => toggleFavorite(item)}
-              >
-                <Ionicons
-                  name="heart"
-                  size={24}
-                  color={isFavorited(item.id) ? "#ff0000" : "#fff"}
-                />
-              </TouchableOpacity>
-            </TouchableOpacity>
-          )}
-          keyExtractor={(item, index) => index.toString()}
-        />
-      )}
+        )}
+      />
     </Layout>
   );
 }
 
 const styles = StyleSheet.create({
-  favoriteIcon: {
-    top: 1,
-    right: 100,
-  },
   searchWrapper: {
     marginTop: 16,
-    position: "relative",
     paddingHorizontal: 16,
+    position: "relative",
   },
   searchInput: {
     width: "100%",
     padding: 12,
     paddingLeft: 40,
-    borderRadius: 8,
+    borderRadius: 12,
     fontFamily: "Poppins",
   },
   searchIcon: {
     position: "absolute",
-    top: 5,
-    left: 25,
-    fontSize: 20,
-    fontFamily: "Poppins",
+    top: 26,
+    left: 28,
+    zIndex: 2,
+  },
+  listContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
   },
   card: {
-    marginVertical: 8,
-    marginHorizontal: 16,
+    borderRadius: 16,
     padding: 16,
-    borderRadius: 8,
-
-    position: "relative",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   cardTitle: {
     fontWeight: "bold",
     fontSize: 18,
-    marginBottom: 5,
     fontFamily: "Poppins",
+    flex: 1,
+    marginRight: 12,
+  },
+  favoriteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.1)",
   },
   cardText: {
     fontSize: 14,
     fontFamily: "Poppins",
+    marginTop: 8,
+  },
+  priceLabel: {
+    marginTop: 16,
+    fontSize: 12,
+    fontFamily: "Poppins",
+    color: "#6B7280",
+  },
+  priceValue: {
+    fontSize: 18,
+    fontWeight: "bold",
+    fontFamily: "Poppins",
   },
   noResultsText: {
     textAlign: "center",
-    fontSize: 16,
-    marginTop: 20,
+    fontSize: 15,
+    marginTop: 40,
     fontFamily: "Poppins",
+    color: "#6B7280",
   },
 });
