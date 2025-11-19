@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View,
   ScrollView,
@@ -7,16 +7,18 @@ import {
   StyleSheet,
   Text,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { Layout, useTheme } from "react-native-rapi-ui";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
-import { getDatabase, ref, get } from "firebase/database";
+import { ref, get } from "firebase/database";
 import { db } from "./firebaseConfig";
 import * as Location from "expo-location";
 import haversine from "haversine";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 const auth = getAuth();
 const firestore = getFirestore();
@@ -28,6 +30,8 @@ export default function ({ navigation }) {
   const [userPhone, setUserPhone] = useState("");
   const [location, setLocation] = useState(null);
   const [nearestPharmacies, setNearestPharmacies] = useState([]);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [locationError, setLocationError] = useState(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -40,7 +44,8 @@ export default function ({ navigation }) {
           setUserName(userData.name || "User");
           setUserPhone(userData.phone || "Unknown");
         } else {
-          console.log("No such document!");
+          setUserName("User");
+          setUserPhone("Unknown");
         }
       } else {
         setUserName("User");
@@ -51,234 +56,316 @@ export default function ({ navigation }) {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        console.log("Permission to access location was denied");
-        return;
-      }
+  const fetchNearestPharmacies = useCallback(async (userCoords) => {
+    try {
+      const snapshot = await get(ref(db, "apotek"));
+      const apotekData = snapshot.val();
 
-      let location = await Location.getCurrentPositionAsync({});
-      setLocation(location);
-      fetchNearestPharmacies(location.coords);
-    })();
+      if (apotekData) {
+        const apoteks = Object.values(apotekData);
+        const nearest = apoteks
+          .map((apotek) => ({
+            ...apotek,
+            distance: haversine(userCoords, {
+              latitude: apotek.latitude,
+              longitude: apotek.longitude,
+            }),
+          }))
+          .sort((a, b) => a.distance - b.distance);
+        setNearestPharmacies(nearest);
+      } else {
+        setNearestPharmacies([]);
+      }
+    } catch (error) {
+      console.log("Error fetching apotek", error);
+      setNearestPharmacies([]);
+      setLocationError("Tidak dapat memuat daftar apotek.");
+    }
   }, []);
 
-  const fetchNearestPharmacies = async (userCoords) => {
-    const snapshot = await get(ref(db, "apotek"));
-    const apotekData = snapshot.val();
+  useEffect(() => {
+    let isMounted = true;
 
-    if (apotekData) {
-      const apoteks = Object.values(apotekData);
-      const nearest = apoteks
-        .map((apotek) => ({
-          ...apotek,
-          distance: haversine(userCoords, {
-            latitude: apotek.latitude,
-            longitude: apotek.longitude,
-          }),
-        }))
-        .sort((a, b) => a.distance - b.distance);
-      setNearestPharmacies(nearest);
-    }
-  };
+    (async () => {
+      try {
+        setIsLoadingLocation(true);
+        setLocationError(null);
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          if (isMounted) {
+            setLocationError(
+              "Izin lokasi ditolak. Aktifkan untuk melihat apotek terdekat."
+            );
+          }
+          return;
+        }
 
-  const openGoogleMaps = (latitude, longitude) => {
+        const currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+
+        if (isMounted) {
+          setLocation(currentLocation);
+          fetchNearestPharmacies(currentLocation.coords);
+        }
+      } catch (error) {
+        console.log("Location error", error);
+        if (isMounted) {
+          setLocationError("Gagal mendapatkan lokasi. Coba lagi nanti.");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingLocation(false);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchNearestPharmacies]);
+
+  const openGoogleMaps = useCallback((latitude, longitude) => {
     const url = `https://www.google.com/maps?q=${latitude},${longitude}`;
     Linking.openURL(url);
-  };
+  }, []);
+
+  const quickActions = useMemo(
+    () => [
+      {
+        label: "Obat",
+        icon: "pill",
+        color: "#34d399",
+        action: () => navigation.navigate("Obat"),
+      },
+      {
+        label: "Penyakit",
+        icon: "virus",
+        color: "#fb7185",
+        action: () => navigation.navigate("Penyakit"),
+      },
+      {
+        label: "Alat",
+        icon: "stethoscope",
+        color: "#60a5fa",
+        action: () => navigation.navigate("Alat"),
+      },
+      {
+        label: "Apotek",
+        icon: "hospital-building",
+        color: "#facc15",
+        action: () => navigation.navigate("Apotek"),
+      },
+    ],
+    [navigation]
+  );
+
+  const renderPharmacyCard = useCallback(
+    (item, index) => (
+      <View
+        key={`${item.id || item.name}-${index}`}
+        style={[
+          styles.pharmacyCard,
+          {
+            backgroundColor: isDarkmode ? "#111827" : "#fff",
+            borderColor: isDarkmode ? "#1f2937" : "#e5e7eb",
+          },
+        ]}
+      >
+        <View style={styles.pharmacyInfo}>
+          <Text
+            style={[
+              styles.pharmacyTitle,
+              { color: isDarkmode ? "#fff" : "#1f2937" },
+            ]}
+          >
+            {item.name}
+          </Text>
+          <Text
+            style={[
+              styles.pharmacyAddress,
+              { color: isDarkmode ? "#d1d5db" : "#4b5563" },
+            ]}
+            numberOfLines={2}
+          >
+            {item.address}
+          </Text>
+          <Text style={{ color: isDarkmode ? "#93c5fd" : "#2563eb" }}>
+            {item.distance.toFixed(2)} km dari lokasi Anda
+          </Text>
+        </View>
+        <View style={styles.pharmacyActions}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Lihat detail apotek"
+            style={[
+              styles.detailButton,
+              { backgroundColor: isDarkmode ? "#1f2937" : "#e0f2fe" },
+            ]}
+            onPress={() => navigation.navigate("DetailApotek", { apotek: item })}
+          >
+            <Text style={{ color: isDarkmode ? "#fff" : "#0f172a" }}>Detail</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Buka lokasi di Google Maps"
+            style={styles.mapButton}
+            onPress={() => openGoogleMaps(item.latitude, item.longitude)}
+          >
+            <Ionicons name="location-sharp" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    ),
+    [isDarkmode, navigation, openGoogleMaps]
+  );
 
   return (
     <Layout>
       <ScrollView contentContainerStyle={styles.container}>
-        <View
-          style={[
-            styles.header,
-            { backgroundColor: isDarkmode ? "#222" : "#0471CA50" },
-          ]}
+        <LinearGradient
+          colors={isDarkmode ? ["#0f172a", "#1f2937"] : ["#3b82f6", "#8b5cf6"]}
+          style={styles.heroCard}
         >
-          <View>
+          <View style={styles.heroContent}>
             <Image
               source={require("../../assets/logohome.png")}
               style={styles.logo}
               resizeMode="contain"
             />
-            <Text
-              style={[
-                styles.welcomeText,
-                { color: isDarkmode ? "#fff" : "#000" },
-              ]}
-            >
-              Hello,
-            </Text>
-            <Text
-              style={[
-                styles.userNameText,
-                { color: isDarkmode ? "#fff" : "#000" },
-              ]}
-            >
-              {userName}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroGreeting}>Halo,</Text>
+              <Text style={styles.heroName}>{userName}</Text>
+              <Text style={styles.heroSubtext}>
+                {userPhone !== "Unknown"
+                  ? `Kontak daruratmu: ${userPhone}`
+                  : "Butuh bantuan kesehatan hari ini?"}
+              </Text>
+            </View>
           </View>
           <TouchableOpacity
-            style={styles.chatButton}
+            style={styles.heroChatButton}
             onPress={() => navigation.navigate("Chat")}
           >
             <MaterialCommunityIcons
               name="android-messages"
-              size={27}
-              color={isDarkmode ? "#fff" : "#000"}
+              size={22}
+              color="#1f2937"
             />
+            <Text style={styles.heroChatText}>Hubungi Admin</Text>
           </TouchableOpacity>
-        </View>
+        </LinearGradient>
 
-        <View
-          style={[
-            styles.kategoriw,
-            { backgroundColor: isDarkmode ? "#333" : "#F1F1F1" },
-          ]}
-        >
-          <View style={styles.kategoriitem}>
-            <TouchableOpacity
-              style={styles.chatButton}
-              onPress={() => navigation.navigate("Obat")}
-            >
-              <MaterialCommunityIcons name="pill" size={35} color="#FF2323" />
-            </TouchableOpacity>
-            <Text
-              style={[
-                styles.kategoritext,
-                { color: isDarkmode ? "#fff" : "#000" },
-              ]}
-            >
-              Obat
-            </Text>
-          </View>
-
-          <View style={styles.kategoriitem}>
-            <TouchableOpacity
-              style={styles.chatButton}
-              onPress={() => navigation.navigate("Penyakit")}
-            >
-              <MaterialCommunityIcons name="virus" size={35} color="#38A61D" />
-            </TouchableOpacity>
-            <Text
-              style={[
-                styles.kategoritext,
-                { color: isDarkmode ? "#fff" : "#000" },
-              ]}
-            >
-              Penyakit
-            </Text>
-          </View>
-
-          <View style={styles.kategoriitem}>
-            <TouchableOpacity
-              style={styles.chatButton}
-              onPress={() => navigation.navigate("Alat")}
-            >
-              <MaterialCommunityIcons
-                name="stethoscope"
-                size={35}
-                color="#69B0F2"
-              />
-            </TouchableOpacity>
-            <Text
-              style={[
-                styles.kategoritext,
-                { color: isDarkmode ? "#fff" : "#000" },
-              ]}
-            >
-              Alat
-            </Text>
-          </View>
-
-          <View style={styles.kategoriitem}>
-            <TouchableOpacity
-              style={styles.chatButton}
-              onPress={() => navigation.navigate("Apotek")}
-            >
-              <MaterialCommunityIcons
-                name="hospital-building"
-                size={35}
-                color="#52565A"
-              />
-            </TouchableOpacity>
-            <Text
-              style={[
-                styles.kategoritext,
-                { color: isDarkmode ? "#fff" : "#000" },
-              ]}
-            >
-              Apotek
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.berita}>
+        <View style={styles.section}>
           <Text
-            style={[styles.beritaText, { color: isDarkmode ? "#fff" : "#000" }]}
+            style={[
+              styles.sectionTitle,
+              { color: isDarkmode ? "#f9fafb" : "#111827" },
+            ]}
+          >
+            Menu Pintas
+          </Text>
+          <View style={styles.quickActionWrapper}>
+            {quickActions.map((action) => (
+              <TouchableOpacity
+                key={action.label}
+                style={[
+                  styles.quickActionItem,
+                  { backgroundColor: `${action.color}1A` },
+                ]}
+                onPress={action.action}
+              >
+                <View
+                  style={[styles.quickIconWrapper, { backgroundColor: action.color }]}
+                >
+                  <MaterialCommunityIcons
+                    name={action.icon}
+                    size={22}
+                    color="#fff"
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.quickActionLabel,
+                    { color: isDarkmode ? "#f9fafb" : "#111827" },
+                  ]}
+                >
+                  {action.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              { color: isDarkmode ? "#f9fafb" : "#111827" },
+            ]}
           >
             Apotek Terdekat
           </Text>
-          {nearestPharmacies.length > 0 ? (
-            <ScrollView style={styles.scrollContainer}>
-              <View style={styles.tableContainer}>
-                {nearestPharmacies.slice(0, 3).map((item, index) => (
-                  <View key={index} style={styles.tableRow}>
-                    <View style={styles.tableCell}>
-                      <TouchableOpacity
-                        onPress={() =>
-                          navigation.navigate("DetailApotek", { apotek: item })
-                        }
-                      >
-                        <Text style={{ color: isDarkmode ? "#fff" : "#000" }}>
-                          {item.name}
-                        </Text>
-                        <Text style={{ color: isDarkmode ? "#aaa" : "#555" }}>
-                          {item.address}
-                        </Text>
-                        <Text style={{ color: isDarkmode ? "#aaa" : "#555" }}>
-                          {item.distance.toFixed(2)} km
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                    <TouchableOpacity
-                      style={{
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                      onPress={() =>
-                        openGoogleMaps(item.latitude, item.longitude)
-                      }
-                    >
-                      <Ionicons
-                        name="location-sharp"
-                        size={24}
-                        color={isDarkmode ? "#4DA8DA" : "#007AFF"}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            </ScrollView>
-          ) : (
-            <Text style={{ color: isDarkmode ? "#fff" : "#000" }}>...</Text>
-          )}
-
-          <View>
-            <TouchableOpacity
-              style={styles.buttonLainnya}
-              onPress={() => {
-                navigation.navigate("Apotek");
-              }}
-            >
-              <Text style={{ color: isDarkmode ? "#fff" : "#000" }}>
-                Lainnya
+          {isLoadingLocation ? (
+            <View style={styles.feedbackCard}>
+              <ActivityIndicator color={isDarkmode ? "#fff" : "#2563eb"} />
+              <Text
+                style={[
+                  styles.feedbackText,
+                  { color: isDarkmode ? "#e5e7eb" : "#4b5563" },
+                ]}
+              >
+                Mencari lokasi Anda...
               </Text>
-            </TouchableOpacity>
-          </View>
+            </View>
+          ) : locationError ? (
+            <View style={styles.feedbackCard}>
+              <MaterialCommunityIcons
+                name="alert-circle"
+                size={24}
+                color="#f97316"
+              />
+              <Text
+                style={[
+                  styles.feedbackText,
+                  { color: isDarkmode ? "#fcd34d" : "#92400e" },
+                ]}
+              >
+                {locationError}
+              </Text>
+            </View>
+          ) : nearestPharmacies.length > 0 ? (
+            <View>
+              {nearestPharmacies.slice(0, 3).map(renderPharmacyCard)}
+              <TouchableOpacity
+                style={styles.viewAllButton}
+                onPress={() => navigation.navigate("Apotek")}
+              >
+                <Text style={styles.viewAllButtonText}>Lihat semua apotek</Text>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={20}
+                  color="#fff"
+                />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.feedbackCard}>
+              <MaterialCommunityIcons
+                name="map-search"
+                size={24}
+                color="#60a5fa"
+              />
+              <Text
+                style={[
+                  styles.feedbackText,
+                  { color: isDarkmode ? "#d1d5db" : "#4b5563" },
+                ]}
+              >
+                Belum ada apotek di sekitar lokasi Anda.
+              </Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </Layout>
@@ -287,105 +374,152 @@ export default function ({ navigation }) {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
+    padding: 20,
+    paddingBottom: 40,
   },
-  header: {
+  heroCard: {
+    borderRadius: 24,
+    padding: 20,
+    marginTop: -10,
+  },
+  heroContent: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#0471CA50",
-    marginHorizontal: -20,
-    marginTop: -50,
-    padding: 30,
-    borderBottomLeftRadius: 17,
-    borderBottomRightRadius: 17,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    marginBottom: 12,
   },
   logo: {
-    width: 120,
-    height: 120,
-    marginBottom: -30,
-    left: -7,
+    width: 70,
+    height: 70,
+    marginRight: 16,
   },
-  welcomeText: {
+  heroGreeting: {
+    fontSize: 16,
+    color: "#e0f2fe",
     fontFamily: "Poppins",
-    fontSize: 15,
-    textAlign: "left",
   },
-  userNameText: {
-    fontFamily: "Poppins",
-    fontSize: 20,
+  heroName: {
+    fontSize: 24,
     fontWeight: "bold",
-    textAlign: "center",
-    marginTop: -5,
+    color: "#fff",
+    fontFamily: "Poppins",
   },
-  kategoriw: {
-    padding: 15,
-    borderBottomLeftRadius: 38,
-    borderBottomRightRadius: 38,
-    marginHorizontal: -20,
-    bottom: 10,
-    backgroundColor: "#F1F1F1",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    shadowColor: "#000",
-    shadowOffset: { width: 1, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  kategoriitem: {
-    bottom: -5,
-    flex: 1,
-    alignItems: "center",
-  },
-  kategoritext: {
+  heroSubtext: {
     fontSize: 14,
+    color: "#e0e7ff",
+    marginTop: 4,
     fontFamily: "Poppins",
-    bottom: 10,
   },
-  berita: {
-    marginTop: 32,
+  heroChatButton: {
+    backgroundColor: "#fff",
+    borderRadius: 30,
+    flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 5,
+    justifyContent: "center",
+    paddingVertical: 10,
   },
-  beritaText: {
-    fontSize: 17,
+  heroChatText: {
+    marginLeft: 8,
+    color: "#1f2937",
+    fontFamily: "Poppins",
+    fontWeight: "600",
+  },
+  section: {
+    marginTop: 28,
+  },
+  sectionTitle: {
+    fontSize: 18,
     fontWeight: "bold",
     fontFamily: "Poppins",
-    left: -110,
-    top: -20,
+    marginBottom: 12,
   },
-  chatButton: {
-    padding: 10,
-    bottom: 3,
-  },
-  scrollContainer: {
-    width: "100%",
-  },
-  tableContainer: {
-    width: "100%",
-    marginTop: -15,
-  },
-  tableRow: {
+  quickActionWrapper: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
-    padding: 10,
-    borderBottomWidth: 1,
-    borderColor: "#ccc",
   },
-  tableCell: {
-    flex: 1,
-    textAlign: "left",
-    fontFamily: "Poppins",
+  quickActionItem: {
+    width: "48%",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
   },
-  icon: {
+  quickIconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
-    padding: 10,
+    marginBottom: 10,
+  },
+  quickActionLabel: {
+    fontFamily: "Poppins",
+    fontWeight: "600",
+  },
+  feedbackCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    padding: 20,
+    alignItems: "center",
+    gap: 12,
+  },
+  feedbackText: {
+    fontFamily: "Poppins",
+    textAlign: "center",
+  },
+  pharmacyCard: {
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    borderWidth: 1,
+  },
+  pharmacyInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  pharmacyTitle: {
+    fontSize: 16,
+    fontFamily: "Poppins",
+    fontWeight: "600",
+  },
+  pharmacyAddress: {
+    fontSize: 13,
+    fontFamily: "Poppins",
+    marginVertical: 4,
+  },
+  pharmacyActions: {
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+  },
+  detailButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  mapButton: {
+    marginTop: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#2563eb",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  viewAllButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1f2937",
+    paddingVertical: 12,
+    borderRadius: 16,
+    marginTop: 8,
+    gap: 6,
+  },
+  viewAllButtonText: {
+    color: "#fff",
+    fontFamily: "Poppins",
+    fontWeight: "600",
   },
 });
