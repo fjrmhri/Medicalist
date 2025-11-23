@@ -1,35 +1,35 @@
 import React, { useContext } from "react";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import { useTheme, themeColor } from "react-native-rapi-ui";
-import TabBarIcon from "../components/utils/TabBarIcon";
+import { themeColor, useTheme } from "react-native-rapi-ui";
+
 import TabBarText from "../components/utils/TabBarText";
-//untuk screens
-import First from "../screens/blank/First";
-import Home from "../screens/Home";
-import Obat from "../screens/Obat";
-import Alat from "../screens/Alat";
-import Penyakit from "../screens/Penyakit";
-import Apotek from "../screens/Apotek";
+import { AuthContext } from "../provider/AuthProvider";
+// Screen utama
 import About from "../screens/About";
-import Profile from "../screens/Profile";
-import Loading from "../screens/utils/Loading";
-import DetailObat from "../screens/DetailObat";
-import DetailAlat from "../screens/DetailAlat";
-import DetailPenyakit from "../screens/DetailPenyakit";
-import DetailApotek from "../screens/DetailApotek";
-import Setting from "../screens/Setting";
+import Alat from "../screens/Alat";
+import Apotek from "../screens/Apotek";
 import ChatAdmin from "../screens/ChatAdmin";
-import Favorit from "../screens/Favorit";
-import ErrorBoundary from "../screens/ErrorBoundary";
 import ChatUsers from "../screens/ChatUsers";
-// untuk Auth screens
+import DetailAlat from "../screens/DetailAlat";
+import DetailApotek from "../screens/DetailApotek";
+import DetailObat from "../screens/DetailObat";
+import DetailPenyakit from "../screens/DetailPenyakit";
+import Favorit from "../screens/Favorit";
+import Home from "../screens/Home";
+import Loading from "../screens/utils/Loading";
+import Obat from "../screens/Obat";
+import Penyakit from "../screens/Penyakit";
+import Profile from "../screens/Profile";
+import Setting from "../screens/Setting";
+import ErrorBoundary from "../screens/ErrorBoundary";
+// Untuk Auth screens
 import Login from "../screens/auth/Login";
 import Register from "../screens/auth/Register";
 import ForgetPassword from "../screens/auth/ForgetPassword";
-import { AuthContext } from "../provider/AuthProvider";
+import First from "../screens/blank/First";
 
 const AuthStack = createNativeStackNavigator();
 const Auth = () => {
@@ -39,6 +39,7 @@ const Auth = () => {
         headerShown: false,
       }}
     >
+      {/* Stack awal untuk autentikasi sebelum pengguna masuk ke aplikasi utama */}
       <AuthStack.Screen name="First" component={First} />
       <AuthStack.Screen name="Login" component={Login} />
       <AuthStack.Screen name="Register" component={Register} />
@@ -55,6 +56,7 @@ const Main = () => {
         headerShown: false,
       }}
     >
+      {/* Stack utama untuk fitur setelah login, dipisahkan agar alur jelas */}
       <MainStack.Screen name="MainTabs" component={MainTabs} />
       <MainStack.Screen name="Obat" component={Obat} />
       <MainStack.Screen name="Alat" component={Alat} />
@@ -77,8 +79,10 @@ const Tabs = createBottomTabNavigator();
 const MainTabs = () => {
   const { isDarkmode } = useTheme();
   const iconSize = 24;
-  const PenyakiticonSize = 21;
-  const ApotekIconSize = 22;
+  const penyakitIconSize = 21;
+  const apotekIconSize = 22;
+
+  // Konfigurasi tab bawah untuk akses cepat ke menu utama
   return (
     <Tabs.Navigator
       screenOptions={{
@@ -131,7 +135,7 @@ const MainTabs = () => {
           tabBarIcon: ({ focused }) => (
             <MaterialCommunityIcons
               name="virus"
-              size={PenyakiticonSize}
+              size={penyakitIconSize}
               color={focused ? themeColor.primary : themeColor.gray}
             />
           ),
@@ -147,7 +151,7 @@ const MainTabs = () => {
           tabBarIcon: ({ focused }) => (
             <MaterialCommunityIcons
               name="stethoscope"
-              size={ApotekIconSize}
+              size={apotekIconSize}
               color={focused ? themeColor.primary : themeColor.gray}
               top={1}
             />
@@ -177,6 +181,8 @@ const MainTabs = () => {
 export default () => {
   const auth = useContext(AuthContext);
   const user = auth.user;
+
+  // Error boundary membungkus navigasi agar crash tidak memutus sesi pengguna
   return (
     <ErrorBoundary>
       <NavigationContainer>
