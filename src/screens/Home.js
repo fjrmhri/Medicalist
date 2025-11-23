@@ -28,12 +28,12 @@ export default function ({ navigation }) {
 
   const [userName, setUserName] = useState("");
   const [userPhone, setUserPhone] = useState("");
-  const [location, setLocation] = useState(null);
   const [nearestPharmacies, setNearestPharmacies] = useState([]);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [locationError, setLocationError] = useState(null);
 
   useEffect(() => {
+    // Ambil profil pengguna yang sedang login agar sapaan lebih personal
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         const userDocRef = doc(firestore, "users", user.uid);
@@ -90,6 +90,7 @@ export default function ({ navigation }) {
       try {
         setIsLoadingLocation(true);
         setLocationError(null);
+        // Permintaan izin lokasi dipisahkan agar mudah di-debug bila gagal
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
           if (isMounted) {
@@ -100,12 +101,12 @@ export default function ({ navigation }) {
           return;
         }
 
+        // Ambil posisi saat ini lalu hitung jarak ke data apotek
         const currentLocation = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
 
         if (isMounted) {
-          setLocation(currentLocation);
           fetchNearestPharmacies(currentLocation.coords);
         }
       } catch (error) {

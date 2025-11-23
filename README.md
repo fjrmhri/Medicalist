@@ -1,78 +1,60 @@
+<p align="center">
+  <img src="https://img.shields.io/github/stars/fjrmhri/Medicalist?style=for-the-badge&logo=github&color=8b5cf6" alt="Stars"/>
+  <img src="https://img.shields.io/github/license/fjrmhri/Medicalist?style=for-the-badge&color=10b981" alt="License"/>
+  <img src="https://img.shields.io/badge/React%20Native-0.76.6-61dafb?style=for-the-badge&logo=react" alt="React Native"/>
+  <img src="https://img.shields.io/badge/Expo-52.0.26-000020?style=for-the-badge&logo=expo" alt="Expo"/>
+  <img src="https://img.shields.io/badge/Firebase-11.0.2-FFCA28?style=for-the-badge&logo=firebase" alt="Firebase"/>
+</p>
+
 # Medicalist
 
-Medicalist is a React Native (Expo) application that helps users explore medicines, medical equipment, diseases, and nearby pharmacies. The refreshed experience focuses on a clean visual language, quick access to the most important sections, and actionable insights powered by real-time Firebase data.
+Aplikasi Medicalist membantu pengguna menjelajahi obat, alat kesehatan, penyakit, serta menemukan apotek terdekat. Dibangun dengan React Native (Expo) dan Firebase, aplikasi ini menjaga antarmuka tetap bersih sambil menyediakan data real-time.
 
-## Features
+## Fitur Utama
 
-- **Modern dashboard** – A redesigned home screen with a gradient hero card, contextual greeting, and quick-action grid for fast navigation.
-- **Location-aware pharmacy recommendations** – Retrieves the user's position (with permission handling) and surfaces the closest pharmacies with shortcuts to Google Maps.
-- **Rich medicine catalogue** – Search across the medicine database, view detail pages, and manage favorites that stay synced with Firebase Realtime Database.
-- **In-app chat shortcuts** – Jump into conversations with administrators from the hero section.
-- **Dark-mode aware styling** – Components adapt automatically when users toggle the theme provided by `react-native-rapi-ui`.
+- **Dashboard modern** dengan kartu hero gradien, sapaan personal, dan pintasan aksi cepat.
+- **Rekomendasi apotek terdekat** berbasis izin lokasi serta perhitungan jarak menggunakan Haversine.
+- **Katalog obat dan alat kesehatan** beserta halaman detail serta daftar favorit sinkron dengan Firebase Realtime Database.
+- **Dukungan tema gelap** berkat integrasi `react-native-rapi-ui`.
+- **Navigasi tab dan stack** menggunakan React Navigation untuk alur masuk/keluar yang jelas.
 
-## Tech Stack
+## Instalasi & Menjalankan Proyek
 
-- [Expo](https://expo.dev/) / React Native 0.76
-- React Navigation (stack + bottom tabs)
-- Firebase Authentication, Firestore, and Realtime Database
-- Expo Location + `haversine` for geospatial calculations
-- Rapi UI design system and Expo Vector Icons
-
-## Project Structure
-
-```
-src/
-├── navigation/      # Root navigators and tab configuration
-├── provider/        # Authentication context
-├── screens/         # All feature screens (Home, Obat, Apotek, Profile, etc.)
-└── components/      # Reusable presentation helpers
-```
-
-Key configuration lives inside `src/screens/firebaseConfig.js`. Update this file with your own Firebase project credentials before running the app in a new environment.
-
-## Getting Started
-
-1. **Install dependencies**
-
+1. **Pasang dependensi**
    ```bash
    npm install
    ```
 
-2. **Configure Firebase**
+2. **Konfigurasi Firebase**
+   - Buat proyek Firebase lalu aktifkan Authentication, Firestore, dan Realtime Database.
+   - Salin konfigurasi web dan perbarui nilai di `src/screens/firebaseConfig.js`.
 
-   - Create a Firebase project and enable Authentication, Firestore, and Realtime Database.
-   - Copy the web configuration and update `src/screens/firebaseConfig.js` with the new values.
-
-3. **Run the development server**
-
+3. **Jalankan pengembangan**
    ```bash
    npm run start
    ```
+   Gunakan output Expo untuk membuka aplikasi di Android, iOS, atau web. Pastikan Expo Go tersedia di perangkat/emulator Anda.
 
-   Use the Expo CLI output to launch the app on Android, iOS, or the web. For native targets make sure you have the Expo Go application installed on your device/emulator.
+## Konfigurasi Lingkungan
 
-## Available Scripts
+- Sesuaikan kredensial Firebase di `src/screens/firebaseConfig.js`.
+- Jika diperlukan, atur izin lokasi pada perangkat/emulator agar rekomendasi apotek berfungsi.
 
-| Command          | Description                                   |
-| ---------------- | --------------------------------------------- |
-| `npm run start`  | Start the Expo bundler                        |
-| `npm run android`| Start Expo and open the Android target        |
-| `npm run ios`    | Start Expo and open the iOS simulator         |
-| `npm run web`    | Launch the project in a web browser           |
+## Struktur Proyek
 
-## Troubleshooting
+```
+src/
+├── navigation/      # Navigator stack dan tab
+├── provider/        # Konteks autentikasi
+├── screens/         # Seluruh layar fitur utama dan utilitas
+└── components/      # Komponen pendukung
+```
 
-- **Location permission denied** – Enable location services for Expo Go or your emulator to see nearby pharmacies.
-- **Firebase permission errors** – Ensure your Firestore and Realtime Database security rules allow the authenticated operations performed by the app.
-- **Metro bundler cache issues** – Clear the cache with `expo start -c` if you see stale assets or unexpected runtime errors.
+## Lisensi
 
-## Contributing
+Repositori ini belum menyertakan berkas lisensi khusus. Tambahkan lisensi sesuai kebutuhan sebelum distribusi lebih lanjut.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/awesome-improvement`)
-3. Commit your changes and push the branch
-4. Open a pull request describing your updates
+## Bantuan & Kontribusi
 
----
-
-Designed with ❤️ to make healthcare information more accessible.
+- Bersihkan cache Metro dengan `expo start -c` jika menemui aset lama atau error tidak jelas.
+- Buka issue atau pull request untuk menyampaikan perbaikan dan ide baru.

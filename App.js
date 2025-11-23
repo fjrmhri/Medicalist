@@ -20,6 +20,7 @@ export default function App() {
     ]);
   }, []);
 
+  // Provider tema dan autentikasi dibungkus di sini agar konsisten di seluruh layar
   return (
     <ThemeProvider images={images}>
       <AuthProvider>
